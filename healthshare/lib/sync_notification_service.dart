@@ -33,6 +33,7 @@ class SyncNotificationService {
         onlyAlertOnce: true,
         showWhen: false,
         icon: '@mipmap/ic_launcher',
+        timeoutAfter: 15000,
       ),
     );
 
@@ -44,7 +45,6 @@ class SyncNotificationService {
     );
     print('Sync notification shown');
   }
-
   static Future<void> showSyncComplete(Map<String, int> result) async {
     print('Showing sync complete notification...');
     const details = NotificationDetails(
