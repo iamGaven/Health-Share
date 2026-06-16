@@ -1,8 +1,8 @@
 import 'package:flutter/services.dart';
-import 'package:healthshare/sync_notification_service.dart';
+import 'package:healthshare/services/notifications/sync_notification_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'fatsecret_service.dart';
-import 'health_connect_service.dart';
+import '../fatsecret_service.dart';
+import '../health_connect_service.dart';
 
 class BackgroundSyncService {
   static const MethodChannel _channel =
@@ -18,9 +18,53 @@ class BackgroundSyncService {
     });
   }
 
-  static Future<void> syncNow() async {
-    await _doSync();
+static Future<void> syncNow({bool silent = false}) async {
+  if (_isSyncing) {
+    print('Sync already in progress, skipping');
+    return;
   }
+  _isSyncing = true;
+  if (!silent) await SyncNotificationService.showSyncing();
+
+  try {
+    final fatSecret = FatSecretService();
+    final healthConnect = HealthConnectService();
+
+    final hasToken = await fatSecret.loadSavedTokens();
+    if (!hasToken) return;
+
+    final hasPermission = await healthConnect.requestPermissions();
+    if (!hasPermission) return;
+
+    final data = await fatSecret.getFoodEntries(DateTime.now());
+    final raw = data['food_entries']?['food_entry'];
+    if (raw == null) {
+      print('No food entries for today');
+      return;
+    }
+
+    final entries = raw is List ? raw : [raw];
+    await healthConnect.removeOrphanedEntries(entries, DateTime.now());
+    final result = await healthConnect.syncFoodEntries(entries);
+
+    if (!silent) {
+      await SyncNotificationService.showSyncComplete({
+        ...result,
+        'removed': 0,
+      });
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('last_sync', DateTime.now().toIso8601String());
+
+    print('Sync complete');
+  } catch (e) {
+    print('Sync error: $e');
+    if (!silent) await SyncNotificationService.dismiss();
+  } finally {
+    _isSyncing = false;
+  }
+}
     
   static Future<void> _doSync() async {
     if (_isSyncing) {

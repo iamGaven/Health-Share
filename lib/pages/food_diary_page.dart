@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../fatsecret_service.dart';
+import '../services/fatsecret_service.dart';
 
 class FoodDiaryPage extends StatefulWidget {
   final FatSecretService fatSecret;

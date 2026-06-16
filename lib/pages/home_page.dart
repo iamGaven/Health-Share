@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:healthshare/background_sync_service.dart';
-import 'package:healthshare/fatsecret_service.dart';
-import 'package:healthshare/health_connect_service.dart';
+import 'package:healthshare/services/notifications/background_sync_service.dart';
+import 'package:healthshare/services/fatsecret_service.dart';
+import 'package:healthshare/services/health_connect_service.dart';
 import 'package:healthshare/pages/food_diary_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -46,7 +46,7 @@ class _HomePageState extends State<HomePage> {
     });
     if (hasToken) {
       await BackgroundSyncService.scheduleSync(intervalMinutes: _syncIntervalMinutes);
-      await _syncToHealthConnect();
+      await _syncToHealthConnect(silent: true);
     }
   }
 
@@ -130,10 +130,10 @@ class _HomePageState extends State<HomePage> {
 
   // ─── Sync ─────────────────────────────────────────────────────
 
-  Future<void> _syncToHealthConnect() async {
+  Future<void> _syncToHealthConnect({bool silent = false}) async {
     setState(() => _isLoading = true);
     try {
-      await BackgroundSyncService.syncNow();
+      await BackgroundSyncService.syncNow(silent: silent);
 
       final data = await _fatSecret.getFoodEntries(DateTime.now());
       final raw = data['food_entries']?['food_entry'];
@@ -152,7 +152,6 @@ class _HomePageState extends State<HomePage> {
     }
     setState(() => _isLoading = false);
   }
-
   Future<void> _loadTodayEntries() async {
     setState(() => _isLoading = true);
     try {

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:healthshare/background_sync_service.dart';
+import 'package:healthshare/services/notifications/background_sync_service.dart';
 import 'pages/home_page.dart';
-import 'sync_notification_service.dart';
+import 'services/notifications/sync_notification_service.dart';
 
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
