@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import 'package:healthshare/sync_notification_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'fatsecret_service.dart';
 import 'health_connect_service.dart';
@@ -20,13 +21,14 @@ class BackgroundSyncService {
   static Future<void> syncNow() async {
     await _doSync();
   }
-
+    
   static Future<void> _doSync() async {
     if (_isSyncing) {
       print('Sync already in progress, skipping');
       return;
     }
     _isSyncing = true;
+    await SyncNotificationService.showSyncing();
 
     try {
       final fatSecret = FatSecretService();
@@ -47,7 +49,14 @@ class BackgroundSyncService {
 
       final entries = raw is List ? raw : [raw];
       await healthConnect.removeOrphanedEntries(entries, DateTime.now());
-      await healthConnect.syncFoodEntries(entries);
+      final result = await healthConnect.syncFoodEntries(entries);
+
+      // Add removed count to result for notification
+      final removed = 0; // removeOrphanedEntries doesn't return a count yet
+      await SyncNotificationService.showSyncComplete({
+        ...result,
+        'removed': removed,
+      });
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('last_sync', DateTime.now().toIso8601String());
@@ -55,16 +64,25 @@ class BackgroundSyncService {
       print('Sync complete');
     } catch (e) {
       print('Sync error: $e');
+      await SyncNotificationService.dismiss();
     } finally {
       _isSyncing = false;
     }
   }
 
-  static Future<void> scheduleSync() async {
+  static Future<void> scheduleSync({int intervalMinutes = 30}) async {
     try {
-      await _channel.invokeMethod('scheduleSync');
+      await _channel.invokeMethod('scheduleSync', {'intervalMinutes': intervalMinutes});
     } catch (e) {
       print('Error scheduling sync: $e');
+    }
+  }
+
+  static Future<void> updateInterval(int intervalMinutes) async {
+    try {
+      await _channel.invokeMethod('updateInterval', {'intervalMinutes': intervalMinutes});
+    } catch (e) {
+      print('Error updating interval: $e');
     }
   }
 
