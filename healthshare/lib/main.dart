@@ -135,41 +135,29 @@ class _HomePageState extends State<HomePage> {
     }
     setState(() => _isLoading = false);
   }
+Future<void> _syncToHealthConnect() async {
+  setState(() => _isLoading = true);
+  try {
+    await BackgroundSyncService.syncNow();
+    
+    // Reload entries for display
+    final data = await _fatSecret.getFoodEntries(DateTime.now());
+    final raw = data['food_entries']?['food_entry'];
 
-  // ─── Sync ─────────────────────────────────────────────────────
-
-  Future<void> _syncToHealthConnect() async {
-    setState(() => _isLoading = true);
-    try {
-      final hasPermission = await _healthConnect.requestPermissions();
-      if (!hasPermission) {
-        setState(() => _syncDetails = 'Health Connect permission denied');
-        setState(() => _isLoading = false);
-        return;
-      }
-
-      final data = await _fatSecret.getFoodEntries(DateTime.now());
-      final raw = data['food_entries']?['food_entry'];
-
-      if (raw == null) {
-        setState(() => _syncDetails = 'No food entries today');
-        setState(() => _isLoading = false);
-        return;
-      }
-
+    if (raw == null) {
+      setState(() => _syncDetails = 'No food entries today');
+    } else {
       final entries = raw is List ? raw : [raw];
-      final result = await _healthConnect.syncFoodEntries(entries);
-
       setState(() {
         _entries = entries;
-        _syncDetails =
-            '${result['added']} added · ${result['skipped']} skipped · ${result['failed']} failed';
+        _syncDetails = 'Sync complete';
       });
-    } catch (e) {
-      setState(() => _syncDetails = 'Sync error: $e');
     }
-    setState(() => _isLoading = false);
+  } catch (e) {
+    setState(() => _syncDetails = 'Sync error: $e');
   }
+  setState(() => _isLoading = false);
+}
 
   Future<void> _loadTodayEntries() async {
     setState(() => _isLoading = true);

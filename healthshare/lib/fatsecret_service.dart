@@ -180,56 +180,58 @@ Future<void> exchangePinForAccessToken(String pin) async {
   // ─── API Call: Get Food Entries ───────────────────────────────
 
   Future<Map<String, dynamic>> getFoodEntries(DateTime date) async {
-    if (_accessToken.isEmpty) throw Exception('Not authenticated');
+  if (_accessToken.isEmpty) throw Exception('Not authenticated');
 
-    final dateInt = date.difference(DateTime(1970, 1, 1)).inDays;
+  final dateInt = date.difference(DateTime(1970, 1, 1)).inDays;
 
-    // API params (not oauth params)
-    final apiParams = {
-      'date': dateInt.toString(),
-      'format': 'json',
-      'method': 'food_entries.get.v2',
-    };
+  final apiParams = {
+    'date': dateInt.toString(),
+    'format': 'json',
+    'method': 'food_entries.get.v2',
+  };
 
-    final oauthParams = {
-      'oauth_consumer_key': consumerKey,
-      'oauth_nonce': _nonce(),
-      'oauth_signature_method': 'HMAC-SHA1',
-      'oauth_timestamp': _timestamp(),
-      'oauth_token': _accessToken,
-      'oauth_version': '1.0',
-    };
+  final oauthParams = {
+    'oauth_consumer_key': consumerKey,
+    'oauth_nonce': _nonce(),
+    'oauth_signature_method': 'HMAC-SHA1',
+    'oauth_timestamp': _timestamp(),
+    'oauth_token': _accessToken,
+    'oauth_version': '1.0',
+  };
 
-    // Combine both for signature only
-    final allParams = {...apiParams, ...oauthParams};
+  final allParams = {...apiParams, ...oauthParams};
 
-    final signature = _buildSignature(
-      method: 'POST',
-      url: apiUrl,
-      params: allParams,
-      tokenSecret: _accessSecret,
-    );
+  final signature = _buildSignature(
+    method: 'POST',
+    url: apiUrl,
+    params: allParams,
+    tokenSecret: _accessSecret,
+  );
 
-    oauthParams['oauth_signature'] = signature;
+  oauthParams['oauth_signature'] = signature;
 
-    final response = await http.post(
-      Uri.parse(apiUrl),
-      headers: {
-        'Authorization': _buildAuthHeader(oauthParams),
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: apiParams,
-    );
+  final body = apiParams.entries
+      .map((e) => '${_encode(e.key)}=${_encode(e.value)}')
+      .join('&');
 
-    print('API Status: ${response.statusCode}');
-    print('API Response: ${response.body}');
+  final response = await http.post(
+    Uri.parse(apiUrl),
+    headers: {
+      'Authorization': _buildAuthHeader(oauthParams),
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: body,
+  );
 
-    if (response.statusCode != 200) {
-      throw Exception('API Failed: ${response.body}');
-    }
+  print('API Status: ${response.statusCode}');
+  print('API Response: ${response.body}');
 
-    return jsonDecode(response.body);
+  if (response.statusCode != 200) {
+    throw Exception('API Failed: ${response.body}');
   }
+
+  return jsonDecode(response.body);
+}
 
   Future<bool> testConnection() async {
   if (_accessToken.isEmpty) return false;

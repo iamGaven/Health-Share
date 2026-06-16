@@ -17,11 +17,12 @@ class HealthConnectService {
     );
   }
 
-  // ─── Get Existing Meals for a Date ───────────────────────────
+  // ─── Get Existing Meals for a Specific Date ───────────────────
 
   Future<Set<String>> getExistingMealKeys(DateTime date) async {
-    final startOfDay = DateTime(date.year, date.month, date.day, 0, 0);
-    final endOfDay = DateTime(date.year, date.month, date.day, 23, 59);
+    // Strict day boundaries — midnight to midnight
+    final startOfDay = DateTime(date.year, date.month, date.day, 0, 0, 0);
+    final endOfDay = DateTime(date.year, date.month, date.day, 23, 59, 59);
 
     try {
       final existing = await _health.getHealthDataFromTypes(
@@ -30,33 +31,46 @@ class HealthConnectService {
         types: [HealthDataType.NUTRITION],
       );
 
-      // Build a set of keys: "foodname_mealtype_date"
       final keys = <String>{};
       for (final point in existing) {
         if (point.value is NutritionHealthValue) {
           final nutrition = point.value as NutritionHealthValue;
+          // Key includes the exact date so meals from different days
+          // never collide
           final key = _buildKey(
             nutrition.name ?? '',
-            nutrition.mealType?.toString() ?? '',
-            date,
+            nutrition.mealType,
+            startOfDay,
           );
           keys.add(key);
         }
       }
 
-      print('Existing meal keys: $keys');
+      print('Existing meal keys for ${date.day}/${date.month}/${date.year}: $keys');
       return keys;
     } catch (e) {
       print('Error fetching existing meals: $e');
       return {};
     }
   }
-
-  String _buildKey(String name, String mealType, DateTime date) {
-    return '${name.toLowerCase()}_${mealType.toLowerCase()}_${date.year}${date.month}${date.day}';
+  
+  String _mealTypeToString(dynamic mealType) {
+  final s = mealType.toString().toLowerCase();
+  // Handles both "breakfast" and "mealtype.breakfast"
+  if (s.contains('breakfast')) return 'breakfast';
+  if (s.contains('lunch')) return 'lunch';
+  if (s.contains('dinner')) return 'dinner';
+  return 'snack';
+  }
+  // Key format: "foodname|mealtype|YYYYMMDD"
+  // Using | as separator to avoid collisions with food names containing _
+  String _buildKey(String name, dynamic mealType, DateTime date) {
+    final dateStr =
+        '${date.year}${date.month.toString().padLeft(2, '0')}${date.day.toString().padLeft(2, '0')}';
+    return '${name.trim().toLowerCase()}|${_mealTypeToString(mealType)}|$dateStr';
   }
 
-  // ─── Sync Food Entries to Health Connect ──────────────────────
+  // ─── Sync Food Entries ────────────────────────────────────────
 
   Future<Map<String, int>> syncFoodEntries(List<dynamic> entries) async {
     await _health.configure();
@@ -65,28 +79,37 @@ class HealthConnectService {
     int skipped = 0;
     int failed = 0;
 
-    // Get date from first entry
-    final dateInt = int.tryParse(entries.first['date_int']?.toString() ?? '0') ?? 0;
-    final date = DateTime(1970, 1, 1).add(Duration(days: dateInt));
+    if (entries.isEmpty) return {'added': 0, 'skipped': 0, 'failed': 0};
 
-    // Get existing meals to avoid duplicates
-    final existingKeys = await getExistingMealKeys(date);
+    // Get the date from the entries — use FatSecret's date_int
+    // so we always sync for the correct calendar day
+    final dateInt =
+        int.tryParse(entries.first['date_int']?.toString() ?? '0') ?? 0;
+    final entryDate = DateTime(1970, 1, 1).add(Duration(days: dateInt));
+    final syncDate = DateTime(entryDate.year, entryDate.month, entryDate.day);
+
+    print('Syncing for date: ${syncDate.day}/${syncDate.month}/${syncDate.year}');
+
+    // Get existing meals for this specific date only
+    final existingKeys = await getExistingMealKeys(syncDate);
 
     for (final entry in entries) {
       try {
         final mealName = entry['meal']?.toString() ?? 'Other';
         final name = entry['food_entry_name']?.toString() ?? 'Unknown';
         final mealType = _getMealType(mealName);
-        final mealTime = _getMealTime(date, mealName);
-        final mealEnd = mealTime.add(const Duration(minutes: 30));
 
-        // Check for duplicate
-        final key = _buildKey(name, mealType.toString(), date);
+        // Build key using the entry's actual date
+        final key = _buildKey(name, mealType, syncDate);
+
         if (existingKeys.contains(key)) {
-          print('Skipping duplicate: $name');
+          print('Skipping duplicate: $name on ${syncDate.day}/${syncDate.month}');
           skipped++;
           continue;
         }
+
+        final mealTime = _getMealTime(syncDate, mealName);
+        final mealEnd = mealTime.add(const Duration(minutes: 30));
 
         final calories =
             double.tryParse(entry['calories']?.toString() ?? '0') ?? 0;
@@ -120,8 +143,13 @@ class HealthConnectService {
         );
 
         if (success) {
+          print('Added: $name');
+          // Add to local set so if same entry appears twice in the
+          // FatSecret response we don't write it twice
+          existingKeys.add(key);
           added++;
         } else {
+          print('Failed to write: $name');
           failed++;
         }
       } catch (e) {
@@ -130,23 +158,30 @@ class HealthConnectService {
       }
     }
 
-    print('Sync done: $added added, $skipped skipped, $failed failed');
+    print(
+        'Sync complete for ${syncDate.day}/${syncDate.month}: $added added, $skipped skipped, $failed failed');
     return {'added': added, 'skipped': skipped, 'failed': failed};
   }
 
   // ─── Helpers ──────────────────────────────────────────────────
-
   DateTime _getMealTime(DateTime date, String meal) {
+    DateTime mealTime;
     switch (meal.toLowerCase()) {
       case 'breakfast':
-        return DateTime(date.year, date.month, date.day, 8, 0);
+        mealTime = DateTime(date.year, date.month, date.day, 8, 0);
+        break;
       case 'lunch':
-        return DateTime(date.year, date.month, date.day, 12, 0);
+        mealTime = DateTime(date.year, date.month, date.day, 12, 0);
+        break;
       case 'dinner':
-        return DateTime(date.year, date.month, date.day, 18, 0);
+        mealTime = DateTime(date.year, date.month, date.day, 18, 0);
+        break;
       default:
-        return DateTime(date.year, date.month, date.day, 15, 0);
+        mealTime = DateTime(date.year, date.month, date.day, 15, 0);
     }
+
+    final now = DateTime.now();
+    return mealTime.isAfter(now) ? now.subtract(const Duration(minutes: 1)) : mealTime;
   }
 
   MealType _getMealType(String meal) {
@@ -161,4 +196,46 @@ class HealthConnectService {
         return MealType.SNACK;
     }
   }
+
+  Future<void> removeOrphanedEntries(
+    List<dynamic> fatSecretEntries,
+    DateTime date,
+  ) async {
+    final startOfDay = DateTime(date.year, date.month, date.day, 0, 0, 0);
+    final endOfDay = DateTime(date.year, date.month, date.day, 23, 59, 59);
+
+    // Build set of keys FatSecret currently has
+    final fatSecretKeys = <String>{};
+    for (final entry in fatSecretEntries) {
+      final name = entry['food_entry_name']?.toString() ?? '';
+      final meal = entry['meal']?.toString() ?? '';
+      fatSecretKeys.add(_buildKey(name, meal, date));
+    }
+
+    // Get everything currently in Health Connect for this day
+    final existing = await _health.getHealthDataFromTypes(
+      startTime: startOfDay,
+      endTime: endOfDay,
+      types: [HealthDataType.NUTRITION],
+    );
+
+    for (final point in existing) {
+      if (point.value is! NutritionHealthValue) continue;
+      if (point.sourceName != 'com.example.healthshare') continue;
+
+      final nutrition = point.value as NutritionHealthValue;
+      final key = _buildKey(nutrition.name ?? '', nutrition.mealType, startOfDay);
+
+      if (!fatSecretKeys.contains(key)) {
+        print('Removing orphan: ${nutrition.name}');
+        final deleted = await _health.delete(
+          type: HealthDataType.NUTRITION,
+          startTime: point.dateFrom,
+          endTime: point.dateTo,
+        );
+        print(deleted ? 'Removed: ${nutrition.name}' : 'Failed to remove: ${nutrition.name}');
+      }
+    }
+  }
+  
 }
