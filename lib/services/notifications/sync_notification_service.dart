@@ -19,32 +19,36 @@ class SyncNotificationService {
       print('Notification permission granted: $granted');
     }
   }
+static Future<void> showSyncing() async {
+  print('Showing sync notification...');
+  const details = NotificationDetails(
+    android: AndroidNotificationDetails(
+      'sync_channel',
+      'Sync Status',
+      channelDescription: 'Shows when a background sync is in progress',
+      importance: Importance.defaultImportance,
+      priority: Priority.defaultPriority,
+      onlyAlertOnce: true,
+      showWhen: false,
+      icon: '@mipmap/ic_launcher',
+      autoCancel: true,
+    ),
+  );
 
-  static Future<void> showSyncing() async {
-    print('Showing sync notification...');
-    const details = NotificationDetails(
-      android: AndroidNotificationDetails(
-        'sync_channel',
-        'Sync Status',
-        channelDescription: 'Shows when a background sync is in progress',
-        importance: Importance.defaultImportance,
-        priority: Priority.defaultPriority,
-        ongoing: true,
-        onlyAlertOnce: true,
-        showWhen: false,
-        icon: '@mipmap/ic_launcher',
-        timeoutAfter: 15000,
-      ),
-    );
+  await _plugin.show(
+    _syncNotificationId,
+    'HealthShare',
+    'Syncing nutrition data...',
+    details,
+  );
+  print('Sync notification shown');
 
-    await _plugin.show(
-      _syncNotificationId,
-      'HealthShare',
-      'Syncing nutrition data...',
-      details,
-    );
-    print('Sync notification shown');
-  }
+  // Force dismiss after 15 seconds if sync hasn't completed
+  Future.delayed(const Duration(seconds: 15), () {
+    _plugin.cancel(_syncNotificationId);
+    print('Sync notification auto-dismissed after 15s');
+  });
+}
   static Future<void> showSyncComplete(Map<String, int> result) async {
     print('Showing sync complete notification...');
     const details = NotificationDetails(
@@ -82,4 +86,11 @@ class SyncNotificationService {
   static Future<void> dismiss() async {
     await _plugin.cancel(_syncNotificationId);
   }
+
+  static Future<void> initializeForBackground() async {
+  const android = AndroidInitializationSettings('@mipmap/ic_launcher');
+  const settings = InitializationSettings(android: android);
+  await _plugin.initialize(settings);
+  // No permission request here — already granted from foreground init
+}
 }

@@ -46,9 +46,11 @@ class _HomePageState extends State<HomePage> {
     });
     if (hasToken) {
       await BackgroundSyncService.scheduleSync(intervalMinutes: _syncIntervalMinutes);
+      await Future.delayed(const Duration(seconds: 2));
       await _syncToHealthConnect(silent: true);
     }
   }
+  
 
   Future<void> _connectFatSecret() async {
     setState(() => _isLoading = true);
@@ -395,6 +397,8 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ),
                 ),
+
+                
                 const SizedBox(width: 8),
                 Expanded(
                   child: OutlinedButton.icon(
@@ -485,4 +489,6 @@ class _HomePageState extends State<HomePage> {
         return Icons.fastfood;
     }
   }
+
+  
 }

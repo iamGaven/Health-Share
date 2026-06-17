@@ -9,6 +9,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(fileName: 'assets/config/.env');
   await SyncNotificationService.initialize();
+  await BackgroundSyncService.initialize();
   runApp(const MyApp());
 }
 class MyApp extends StatelessWidget {
