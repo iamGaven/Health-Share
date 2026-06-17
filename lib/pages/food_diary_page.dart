@@ -24,32 +24,43 @@ class _FoodDiaryPageState extends State<FoodDiaryPage> {
     super.initState();
     _loadEntries();
   }
+Future<void> _loadEntries() async {
+  setState(() {
+    _isLoading = true;
+    _error = '';
+  });
 
-  Future<void> _loadEntries() async {
-    setState(() {
-      _isLoading = true;
-      _error = '';
-    });
-
+  try {
+    Map<String, dynamic> data;
     try {
-      final data = await widget.fatSecret.getFoodEntries(_selectedDate);
-      final raw = data['food_entries']?['food_entry'];
-
-      setState(() {
-        if (raw == null) {
-          _entries = [];
-        } else if (raw is List) {
-          _entries = raw;
-        } else {
-          _entries = [raw]; // single entry comes as object not array
-        }
-      });
+      data = await widget.fatSecret.getFoodEntries(_selectedDate);
     } catch (e) {
-      setState(() => _error = e.toString());
+      if (e.toString().contains('Invalid signature')) {
+        // Retry once after a short delay to avoid timestamp collision
+        await Future.delayed(const Duration(milliseconds: 500));
+        data = await widget.fatSecret.getFoodEntries(_selectedDate);
+      } else {
+        rethrow;
+      }
     }
 
-    setState(() => _isLoading = false);
+    final raw = data['food_entries']?['food_entry'];
+
+    setState(() {
+      if (raw == null) {
+        _entries = [];
+      } else if (raw is List) {
+        _entries = raw;
+      } else {
+        _entries = [raw];
+      }
+    });
+  } catch (e) {
+    setState(() => _error = e.toString());
   }
+
+  setState(() => _isLoading = false);
+}
 
   Future<void> _pickDate() async {
     final picked = await showDatePicker(

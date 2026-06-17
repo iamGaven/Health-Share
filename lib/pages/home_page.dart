@@ -24,6 +24,7 @@ class _HomePageState extends State<HomePage> {
   bool _isLoading = false;
   bool _isConnected = false;
   List<dynamic> _entries = [];
+  DateTime? _lastLoadedDate;
 
   @override
   void initState() {
@@ -132,16 +133,29 @@ class _HomePageState extends State<HomePage> {
 
   // ─── Sync ─────────────────────────────────────────────────────
 
+
   Future<void> _syncToHealthConnect({bool silent = false}) async {
     setState(() => _isLoading = true);
     try {
+      final today = DateTime.now();
+      final isNewDay = _lastLoadedDate == null ||
+          _lastLoadedDate!.day != today.day ||
+          _lastLoadedDate!.month != today.month;
+
+      if (isNewDay) {
+        setState(() => _entries = []); // clear stale entries immediately
+      }
+
       await BackgroundSyncService.syncNow(silent: silent);
 
-      final data = await _fatSecret.getFoodEntries(DateTime.now());
+      final data = await _fatSecret.getFoodEntries(today);
       final raw = data['food_entries']?['food_entry'];
 
       if (raw == null) {
-        setState(() => _syncDetails = 'No food entries today');
+        setState(() {
+          _syncDetails = 'No food entries today';
+          _entries = [];
+        });
       } else {
         final entries = raw is List ? raw : [raw];
         setState(() {
@@ -149,11 +163,15 @@ class _HomePageState extends State<HomePage> {
           _syncDetails = 'Sync complete';
         });
       }
+
+      _lastLoadedDate = today;
     } catch (e) {
       setState(() => _syncDetails = 'Sync error: $e');
     }
     setState(() => _isLoading = false);
   }
+
+
   Future<void> _loadTodayEntries() async {
     setState(() => _isLoading = true);
     try {
