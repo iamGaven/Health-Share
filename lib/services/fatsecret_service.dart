@@ -22,6 +22,7 @@ class FatSecretService {
   String _tempSecret = '';
   String _accessToken = '';
   String _accessSecret = '';
+  bool _isCalling = false;
 
   // ─── OAuth Helpers ────────────────────────────────────────────
 
@@ -174,12 +175,28 @@ class FatSecretService {
   }
 
   // ─── API Call: Get Food Entries ───────────────────────────────
+Future<Map<String, dynamic>> getFoodEntries(DateTime date) async {
+  if (_accessToken.isEmpty) throw Exception('Not authenticated');
 
-  Future<Map<String, dynamic>> getFoodEntries(DateTime date) async {
-    if (_accessToken.isEmpty) throw Exception('Not authenticated');
+  // Wait if another call is already in progress
+  while (_isCalling) {
+    await Future.delayed(const Duration(milliseconds: 100));
+  }
+  _isCalling = true;
 
-    final dateInt = date.difference(DateTime(1970, 1, 1)).inDays;
+  try {
+    return await _doGetFoodEntries(date);
+  } finally {
+    // Always release the lock, even on error
+    _isCalling = false;
+  }
+}
 
+Future<Map<String, dynamic>> _doGetFoodEntries(DateTime date) async {
+  final dateInt = date.difference(DateTime(1970, 1, 1)).inDays;
+
+  // 2. Retry loop — up to 3 attempts with increasing delay
+  for (int attempt = 1; attempt <= 3; attempt++) {
     final apiParams = {
       'date': dateInt.toString(),
       'format': 'json',
@@ -188,9 +205,9 @@ class FatSecretService {
 
     final oauthParams = {
       'oauth_consumer_key': consumerKey,
-      'oauth_nonce': _nonce(),
+      'oauth_nonce': _nonce(),           // fresh nonce each attempt
       'oauth_signature_method': 'HMAC-SHA1',
-      'oauth_timestamp': _timestamp(),
+      'oauth_timestamp': _timestamp(),   // fresh timestamp each attempt
       'oauth_token': _accessToken,
       'oauth_version': '1.0',
     };
@@ -219,15 +236,33 @@ class FatSecretService {
       body: body,
     );
 
-    print('API Status: ${response.statusCode}');
-    print('API Response: ${response.body}');
-
     if (response.statusCode != 200) {
       throw Exception('API Failed: ${response.body}');
     }
 
-    return jsonDecode(response.body);
+    final decoded = jsonDecode(response.body);
+
+    // 3. Check for invalid signature error specifically and retry
+    if (decoded['error'] != null) {
+      final code = decoded['error']['code'];
+      final message = decoded['error']['message'] ?? '';
+
+      if (code == 8 && attempt < 3) {
+        // Invalid signature — wait longer each retry so timestamps diverge
+        final waitMs = attempt * 1200;
+        print('Attempt $attempt: Invalid signature, retrying in ${waitMs}ms...');
+        await Future.delayed(Duration(milliseconds: waitMs));
+        continue; // retry
+      }
+
+      throw Exception('FatSecret error ${code}: $message');
+    }
+
+    return decoded; // success
   }
+
+  throw Exception('getFoodEntries failed after 3 attempts');
+}
 
   // ─── Connection Test ──────────────────────────────────────────
 
